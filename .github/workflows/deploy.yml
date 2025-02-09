@@ -189,7 +189,7 @@ jobs:
 
       - name: Build Docker Image & Push to Docker Hub
         run: |
-          docker build -t kkangtong
+          docker build -t kkangtong .
           docker push kkangtong
 
       - name: Get current time
