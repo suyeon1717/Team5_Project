@@ -1,26 +1,170 @@
-name: deploy
+# name: deploy
 
+# on:
+#   push:
+#     branches:
+#       - 'main'
+
+
+# jobs:
+#   build:
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - name: Checkout
+#         uses: actions/checkout@v3
+
+#       - name: Set up JDK 17
+#         uses: actions/setup-java@v3
+#         with:
+#           java-version: '17'
+#           distribution: 'temurin'
+          
+#      # application.yml 생성
+#       - name: generate application.yml
+#         run: |
+#           mkdir -p ./src/main/resources
+#           cd ./src/main/resources
+#           touch ./application.yml
+#           echo "${{ secrets.APPLICATION }}" > ./application.yml
+
+#       - name: Grant execute permission for gradlew
+#         run: |
+#           chmod +x ./gradlew
+
+#       - name: Build with Gradle
+#         run: |
+#           ./gradlew clean build 
+
+#       - name: Login to Docker Hub
+#         uses: docker/login-action@v2
+#         with:
+#           username: ${{ secrets.DOCKERHUB_USERNAME }}
+#           password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+
+#       - name: Build Docker Image & Push to Docker Hub
+#         run: |
+#           docker build -t kkangtong
+#           docker push kkangtong
+
+#       - name: Get current time
+#         uses: 1466587594/get-current-time@v2
+#         id: current-time
+#         with:
+#           format: YYYY-MM-DDTHH-mm-ss
+#           utcOffset: "+09:00"
+
+#       - name: Deploy to EB
+#         uses: einaregilsson/beanstalk-deploy@v18
+#         with:
+#           aws_access_key: ${{ secrets.AWS_ACCESS_KEY }}
+#           aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#           application_name: kkangtong-docker
+#           environment_name: kkangtong-docker-env
+#           version_label: github-action--${{steps.current-time.outputs.formattedTime}}
+#           region: ap-northeast-2
+#           deployment_package: compose.yml
+
+
+permissions:
+  contents: read
+  checks: write  # ✅ 체크 실행을 위해 write 권한 추가
+  pull-requests: write  # ✅ PR에 대한 체크 실행 가능
+
+name: Team5 CI/CD Pipeline
 on:
+  pull_request:
+    branches:
+      - master
   push:
     branches:
-      - 'main'
-
+      - master
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v3
+    
+      # git checkout 실행
+      - name: checkout
+        uses: actions/checkout@v4
+        
+      #  JAVA 설치
+      - name: setup JDK
+        uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          java-version: 17
           distribution: 'temurin'
+          cache: gradle
+          cache-dependency-path: '**/build.gradle*'
           
-     # application.yml 생성
+      # application.yml 생성
+      - name: generate application.yml
+        run: |
+          mkdir -p ./src/main/resources
+          cd ./src/main/resources
+          touch ./application.yml
+          echo "${{ secrets.APPLICATION }}" > ./application.yml
+          
+      # 빌드할 수 있는 권한 부여
+      - name: grant execute permission for gradlew
+        run: chmod +x ./gradlew
+        
+      # 테스트 후 빌드
+      - name: build with gradle
+        run: ./gradlew clean build
+        shell: bash
+        
+      # 빌드 시점 시간 기록
+      - name: get current time
+        uses: 1466587594/get-current-time@v2 # 타임존 설정
+        id: current-time
+        with:
+          format: YYYY-MM-DDTHH-mm-ss
+          utcOffset: "+09:00" #한국 시간
+          
+      # 시간 조회
+      - name: show current time
+        run: echo "CurrentTime=${{ steps.current-time.outputs.formattedTime }}"
+        shell: bash
+
+      - name: 테스트 결과를 PR 코멘트로 출력
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          files: '**/build/test-results/test/TEST-*.xml'
+
+      - name: 테스트 실패 시, 오류가 발생한 코드 라인에 코멘트 추가
+        uses: mikepenz/action-junit-report@v4
+        if: always()
+        with:
+          report_paths: '**/build/test-results/test/TEST-*.xml'
+      
+  # deploy: 배포 작업을 수행하는 job을 정의
+  deploy:
+    needs: build # 빌드가 성공해야 배포
+    runs-on: ubuntu-latest
+    
+    # github 이벤트가 master 브랜치 push인 경우, 배포 실행 
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    
+    steps:
+    
+      # git checkout 실행
+      - name: checkout
+        uses: actions/checkout@v4
+        
+      #  JAVA 설치
+      - name: setup JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: 'temurin'
+          cache: gradle
+          cache-dependency-path: '**/build.gradle*'
+      
+      # application.yml 생성
       - name: generate application.yml
         run: |
           mkdir -p ./src/main/resources
